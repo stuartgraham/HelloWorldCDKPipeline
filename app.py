@@ -2,10 +2,11 @@
 
 from aws_cdk import core
 
-from cdk.cdk_stack import CdkStack
+from cdk.pipeline_stack import PipelineStack
 
+aws_env = core.Environment(account="811799881965", region="eu-west-1")
 
 app = core.App()
-CdkStack(app, "cdk")
+PipelineStack(app, "cdk", env=aws_env)
 
 app.synth()

@@ -1,10 +1,16 @@
 from os import path
+import yaml
+
 from aws_cdk import (
     core,
     aws_ecr as ecr,
     aws_codebuild as codebuild
 )
-from .buildspec import buildspec as buildspec
+
+
+with open('buildspec.yaml') as f:
+    buildspec = yaml.load(f, Loader=yaml.FullLoader)
+
 
 class PipelineStack(core.Stack):
 

@@ -3,13 +3,24 @@ version: 0.2
 phases:
   install:
     commands:
-      - echo doing something
+      - echo Install phase started
+      - cd flask
   pre_build:
     commands:
-      - echo doing something
+      - echo Logging in to Amazon ECR
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
   build:
     commands:
-      - echo doing something
+      - echo Starting build number ':' $CODEBUILD_BUILD_NUMBER
+      - echo Building image
+      - BUILD_PREFIX="v1.0."
+      - TAG_NAME=$BUILD_PREFIX$CODEBUILD_BUILD_NUMBER
+      - echo $TAG_NAME
+      - docker build --no-cache -t $REPO_NAME:$TAG_NAME .
+      - docker tag $REPO_NAME:$TAG_NAME $REPO_NAME:latest
   post_build:
     commands:
-      - echo doing something
+      - echo Pushing Docker images
+      - docker push $REPO_NAME:$TAG_NAME
+      - docker push $REPO_NAME:latest
+      - echo Build complete

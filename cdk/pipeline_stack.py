@@ -4,13 +4,9 @@ import yaml
 from aws_cdk import (
     core,
     aws_ecr as ecr,
-    aws_codebuild as codebuild
+    aws_codebuild as codebuild,
+    aws_iam as _iam
 )
-
-
-with open('buildspec.yaml') as f:
-    buildspec = yaml.load(f, Loader=yaml.FullLoader)
-
 
 class PipelineStack(core.Stack):
 
@@ -18,9 +14,13 @@ class PipelineStack(core.Stack):
         super().__init__(scope, construct_id, **kwargs)
         
         this_dir = path.dirname(__file__)
+        with open(path.join(this_dir, 'buildspec.yaml')) as f:
+            buildspec = yaml.load(f, Loader=yaml.FullLoader)
 
         # ECR
-        ecr_repo = ecr.Repository(self, "HelloWorldRepo")
+        ecr_repo = ecr.Repository(self, "HelloWorldRepo",
+            repository_name='helloworld'
+        )
 
         # Codebuild
         codebuild.GitHubSourceCredentials(self, "CodeBuildGitHubCreds",
@@ -37,18 +37,19 @@ class PipelineStack(core.Stack):
             ]
         )
 
-        codebuild.Project(self, "HelloWorldBuildProject", 
+        helloworld_codebuild_project = codebuild.Project(self, "HelloWorldBuildProject", 
             source=github_source, 
             build_spec=codebuild.BuildSpec.from_object(buildspec),
-            environment=codebuild.BuildEnvironment(build_image=codebuild.LinuxBuildImage.STANDARD_4_0,
+            environment=codebuild.BuildEnvironment(build_image=codebuild.LinuxBuildImage.STANDARD_5_0,
                 privileged=True),        
             environment_variables= {
-            'TEST': {'value': 'test'},
-            #'PACKAGE_BUCKET': {'value': artifactsBucket.bucket_name},
-            #'AWS_ACCOUNT_ID': {'value': self.account},
-            'IMAGE_REPO_NAME': {'value': f'{self.account}.dkr.ecr.{self.region}.amazonaws.com/{ecr_repo}'},
-            #'IMAGE_TAG': {'value': tag}, 
+            'AWS_ACCOUNT_ID': {'value': self.account},
+            'REPO_NAME': {'value': f'{self.account}.dkr.ecr.{self.region}.amazonaws.com/{ecr_repo.repository_name}'}
             }            
             )
+
+        helloworld_codebuild_project.role.add_managed_policy(
+                _iam.ManagedPolicy.from_aws_managed_policy_name('AmazonEC2ContainerRegistryPowerUser'))
+
 
 

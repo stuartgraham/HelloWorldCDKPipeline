@@ -9,7 +9,8 @@ from aws_cdk import (
     aws_codedeploy as codedeploy,
     aws_ec2 as ec2,
     aws_iam as iam,
-    aws_elasticloadbalancingv2 as elbv2
+    aws_elasticloadbalancingv2 as elb,
+    aws_elasticloadbalancingv2_targets as elb_targets
 )
 
 class PipelineStack(core.Stack):
@@ -18,9 +19,15 @@ class PipelineStack(core.Stack):
         super().__init__(scope, construct_id, **kwargs)
         
         this_dir = path.dirname(__file__)
-        with open(path.join(this_dir, 'buildspec.yaml')) as f:
+        with open(path.join(this_dir, "buildspec.yaml")) as f:
             buildspec = yaml.load(f, Loader=yaml.FullLoader)
         
+        # ECR
+        ecr_repo = ecr.Repository(self, "HelloWorldRepo",
+            repository_name="helloworld"
+        )
+        ecr_repo.add_lifecycle_rule(max_image_count=10)
+
         # VPC
         target_vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_name="Main VPC")
 
@@ -30,26 +37,64 @@ class PipelineStack(core.Stack):
             vpc=target_vpc
         )
 
+        # ECS Task
+        hello_world_ecs_exec_role  = iam.Role(self, "FargateContainerExecutionRole",
+            assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"))
+
+        hello_world_ecs_task_role  = iam.Role(self, "FargateContainerTaskRole",
+            assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"))
+        
+        hello_world_definition = ecs.FargateTaskDefinition(self, "HelloWorldTaskDef",
+            memory_limit_mib=512,
+            cpu=256,
+            execution_role=hello_world_ecs_exec_role, 
+            task_role=hello_world_ecs_task_role
+        )
+
+        container = hello_world_definition.add_container("HelloWorldWebContainer",
+            image=ecs.ContainerImage.from_ecr_repository(ecr_repo)
+        )
+
+
         # ALB
-        helloworld_alb = elbv2.ApplicationLoadBalancer(self, "HelloWorldALB",
+        helloworld_alb = elb.ApplicationLoadBalancer(self, "HelloWorldALB",
             vpc=target_vpc,
             internet_facing=True
         )
-        helloworld_listener = helloworld_alb.add_listener("HelloWorldListener",
+
+        helloworld_listener_1 = helloworld_alb.add_listener("HelloWorldListener1",
             port=80,
             open=True
         )
-        helloworld_alb.add_targets("HelloWorldALB-TG1",
+
+        helloworld_listener_2 = helloworld_alb.add_listener("HelloWorldListener2",
             port=8080,
-            targets=[asg]
+            open=True
+        )
+
+        helloworld_tg1 = elb.ApplicationTargetGroup(self, "HelloWorldTG1",
+            target_type=elb.TargetType.IP,
+            port=5000,
+            protocol=elb.ApplicationProtocol("HTTP"),
+            vpc=target_vpc
+        )
+
+        helloworld_tg2 = elb.ApplicationTargetGroup(self, "HelloWorldTG2",
+            target_type=elb.TargetType.IP,
+            port=5000,
+            protocol=elb.ApplicationProtocol("HTTP"),
+            vpc=target_vpc
+        )
+
+        helloworld_listener_1.add_target_groups("HelloWorldAddTG1",
+            target_groups=[helloworld_tg1]
+        )
+
+        helloworld_listener_2.add_target_groups("HelloWorldAddTG2",
+            target_groups=[helloworld_tg2]
         )
 
 
-        # ECR
-        ecr_repo = ecr.Repository(self, "HelloWorldRepo",
-            repository_name='helloworld'
-        )
-        ecr_repo.add_lifecycle_rule(max_image_count=10)
 
         # Codebuild
         codebuild.GitHubSourceCredentials(self, "CodeBuildGitHubCreds",
@@ -72,13 +117,13 @@ class PipelineStack(core.Stack):
             environment=codebuild.BuildEnvironment(build_image=codebuild.LinuxBuildImage.STANDARD_5_0,
                 privileged=True),        
             environment_variables= {
-            'AWS_ACCOUNT_ID': {'value': self.account},
-            'REPO_NAME': {'value': f'{self.account}.dkr.ecr.{self.region}.amazonaws.com/{ecr_repo.repository_name}'}
+            "AWS_ACCOUNT_ID": {"value": self.account},
+            "REPO_NAME": {"value": f"{self.account}.dkr.ecr.{self.region}.amazonaws.com/{ecr_repo.repository_name}"}
             }            
             )
 
         helloworld_codebuild_project.role.add_managed_policy(
-                iam.ManagedPolicy.from_aws_managed_policy_name('AmazonEC2ContainerRegistryPowerUser'))
+                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonEC2ContainerRegistryPowerUser"))
 
         # Codedeploy
         helloworld_application = codedeploy.EcsApplication(self, "HelloWorldApplication",

@@ -51,7 +51,7 @@ class PipelineStack(core.Stack):
             task_role=hello_world_ecs_task_role
         )
 
-        container = hello_world_definition.add_container("HelloWorldWebContainer",
+        container = hello_world_definition.add_container("HelloWorld",
             image=ecs.ContainerImage.from_ecr_repository(ecr_repo)
         )
 

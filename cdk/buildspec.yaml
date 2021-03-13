@@ -21,6 +21,6 @@ phases:
   post_build:
     commands:
       - echo Pushing Docker images
-      #- docker push $REPO_NAME:$TAG_NAME
+      - docker push $REPO_NAME:$TAG_NAME
       - docker push $REPO_NAME:latest
       - echo Build complete

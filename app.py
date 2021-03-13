@@ -7,6 +7,6 @@ from cdk.pipeline_stack import PipelineStack
 aws_env = core.Environment(account="811799881965", region="eu-west-1")
 
 app = core.App()
-PipelineStack(app, "cdk", env=aws_env)
+PipelineStack(app, "HelloWorld", env=aws_env)
 
 app.synth()

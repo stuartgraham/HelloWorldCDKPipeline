@@ -4,8 +4,12 @@ import yaml
 from aws_cdk import (
     core,
     aws_ecr as ecr,
+    aws_ecs as ecs,
     aws_codebuild as codebuild,
-    aws_iam as _iam
+    aws_codedeploy as codedeploy,
+    aws_ec2 as ec2,
+    aws_iam as iam,
+    aws_elasticloadbalancingv2 as elbv2
 )
 
 class PipelineStack(core.Stack):
@@ -16,11 +20,36 @@ class PipelineStack(core.Stack):
         this_dir = path.dirname(__file__)
         with open(path.join(this_dir, 'buildspec.yaml')) as f:
             buildspec = yaml.load(f, Loader=yaml.FullLoader)
+        
+        # VPC
+        target_vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_name="Main VPC")
+
+        # ECS
+        hello_world_ecs_cluster = ecs.Cluster(self, "HelloWorldEcsCluster",
+            cluster_name="HelloWorldCluster",
+            vpc=target_vpc
+        )
+
+        # ALB
+        helloworld_alb = elbv2.ApplicationLoadBalancer(self, "HelloWorldALB",
+            vpc=target_vpc,
+            internet_facing=True
+        )
+        helloworld_listener = helloworld_alb.add_listener("HelloWorldListener",
+            port=80,
+            open=True
+        )
+        helloworld_alb.add_targets("HelloWorldALB-TG1",
+            port=8080,
+            targets=[asg]
+        )
+
 
         # ECR
         ecr_repo = ecr.Repository(self, "HelloWorldRepo",
             repository_name='helloworld'
         )
+        ecr_repo.add_lifecycle_rule(max_image_count=10)
 
         # Codebuild
         codebuild.GitHubSourceCredentials(self, "CodeBuildGitHubCreds",
@@ -49,7 +78,10 @@ class PipelineStack(core.Stack):
             )
 
         helloworld_codebuild_project.role.add_managed_policy(
-                _iam.ManagedPolicy.from_aws_managed_policy_name('AmazonEC2ContainerRegistryPowerUser'))
+                iam.ManagedPolicy.from_aws_managed_policy_name('AmazonEC2ContainerRegistryPowerUser'))
 
-
+        # Codedeploy
+        helloworld_application = codedeploy.EcsApplication(self, "HelloWorldApplication",
+            application_name="HelloWorld"
+        )
 

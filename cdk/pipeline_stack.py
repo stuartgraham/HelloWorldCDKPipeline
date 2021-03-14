@@ -28,33 +28,50 @@ class PipelineStack(core.Stack):
         )
         ecr_repo.add_lifecycle_rule(max_image_count=10)
 
+        # Codebuild
+        codebuild.GitHubSourceCredentials(self, "CodeBuildGitHubCreds",
+            access_token=core.SecretValue.secrets_manager("github-token")
+        )
+        
+        github_source = codebuild.Source.git_hub(
+            owner="stuartgraham",
+            repo="HelloWorldCodePipeline",
+            webhook=True,
+            webhook_triggers_batch_build=False,
+            webhook_filters=[
+                codebuild.FilterGroup.in_event_of(codebuild.EventAction.PUSH)
+            ]
+        )
+
+        helloworld_codebuild_project = codebuild.Project(self, "HelloWorldBuildProject", 
+            source=github_source, 
+            build_spec=codebuild.BuildSpec.from_object(buildspec),
+            environment=codebuild.BuildEnvironment(build_image=codebuild.LinuxBuildImage.STANDARD_5_0,
+                privileged=True),        
+            environment_variables= {
+            "AWS_ACCOUNT_ID": {"value": self.account},
+            "REPO_NAME": {"value": f"{self.account}.dkr.ecr.{self.region}.amazonaws.com/{ecr_repo.repository_name}"}
+            }            
+            )
+
+        helloworld_codebuild_project.role.add_managed_policy(
+                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonEC2ContainerRegistryPowerUser"))
+
+        # Codedeploy
+        hello_world_application = codedeploy.EcsApplication(self, "HelloWorldApplication",
+            application_name="HelloWorld"
+        )
+
+        hello_world_codedeloy_role  = iam.Role(self, "HelloWorldCodeDeployRole",
+            assumed_by=iam.ServicePrincipal("codedeploy.amazonaws.com"))
+
+        hello_world_codedeloy_role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name("AWSCodeDeployRoleForECS")
+        )
+
+
         # VPC
         target_vpc = ec2.Vpc.from_lookup(self, "VPC", vpc_name="Main VPC")
-
-        # ECS
-        hello_world_ecs_cluster = ecs.Cluster(self, "HelloWorldEcsCluster",
-            cluster_name="HelloWorldCluster",
-            vpc=target_vpc
-        )
-
-        # ECS Task
-        hello_world_ecs_exec_role  = iam.Role(self, "FargateContainerExecutionRole",
-            assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"))
-
-        hello_world_ecs_task_role  = iam.Role(self, "FargateContainerTaskRole",
-            assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"))
-        
-        hello_world_definition = ecs.FargateTaskDefinition(self, "HelloWorldTaskDef",
-            memory_limit_mib=512,
-            cpu=256,
-            execution_role=hello_world_ecs_exec_role, 
-            task_role=hello_world_ecs_task_role
-        )
-
-        container = hello_world_definition.add_container("HelloWorld",
-            image=ecs.ContainerImage.from_ecr_repository(ecr_repo)
-        )
-
 
         # ALB
         helloworld_alb = elb.ApplicationLoadBalancer(self, "HelloWorldALB",
@@ -96,37 +113,64 @@ class PipelineStack(core.Stack):
 
 
 
-        # Codebuild
-        codebuild.GitHubSourceCredentials(self, "CodeBuildGitHubCreds",
-            access_token=core.SecretValue.secrets_manager("github-token")
+        # ECS
+        hello_world_ecs_cluster = ecs.Cluster(self, "HelloWorldEcsCluster",
+            cluster_name="HelloWorldCluster",
+            capacity_providers=["FARGATE", "FARGATE_SPOT"],
+            vpc=target_vpc
         )
+
+        # ECS Task
+        hello_world_ecs_exec_role  = iam.Role(self, "FargateContainerExecutionRole",
+            assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"))
+
+        hello_world_ecs_task_role  = iam.Role(self, "FargateContainerTaskRole",
+            assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"))
         
-        github_source = codebuild.Source.git_hub(
-            owner="stuartgraham",
-            repo="HelloWorldCodePipeline",
-            webhook=True,
-            webhook_triggers_batch_build=False,
-            webhook_filters=[
-                codebuild.FilterGroup.in_event_of(codebuild.EventAction.PUSH)
+        hello_world_task_def = ecs.FargateTaskDefinition(self, "HelloWorldTaskDef",
+            memory_limit_mib=512,
+            cpu=256,
+            execution_role=hello_world_ecs_exec_role, 
+            task_role=hello_world_ecs_task_role
+        )
+
+        hello_world_container = hello_world_task_def.add_container("HelloWorld",
+            image=ecs.ContainerImage.from_ecr_repository(ecr_repo)
+        )
+
+        hello_world_security_group = ec2.SecurityGroup(
+            self, "HelloWorldContainerSG",
+            vpc=target_vpc,
+            allow_all_outbound=True
+        )
+        hello_world_security_group.add_ingress_rule(
+            ec2.Peer.any_ipv4(),
+            ec2.Port.tcp(5000)
+        )
+
+        fargate_capacity_provider_strategy = ecs.CapacityProviderStrategy(
+            capacity_provider="FARGATE",
+            base=1,
+            weight=0
+        )
+        fargate_spot_capacity_provider_strategy = ecs.CapacityProviderStrategy(
+            capacity_provider="FARGATE_SPOT",
+            base=0,
+            weight=100
+        )
+
+
+        hello_world_ecs_service = ecs.FargateService(self, "HelloWorldService",
+            cluster=hello_world_ecs_cluster,
+            task_definition=hello_world_task_def,
+            desired_count=5,
+            assign_public_ip=False,
+            security_groups=[hello_world_security_group],
+            capacity_provider_strategies=[
+                fargate_spot_capacity_provider_strategy,
+                fargate_capacity_provider_strategy
             ]
         )
 
-        helloworld_codebuild_project = codebuild.Project(self, "HelloWorldBuildProject", 
-            source=github_source, 
-            build_spec=codebuild.BuildSpec.from_object(buildspec),
-            environment=codebuild.BuildEnvironment(build_image=codebuild.LinuxBuildImage.STANDARD_5_0,
-                privileged=True),        
-            environment_variables= {
-            "AWS_ACCOUNT_ID": {"value": self.account},
-            "REPO_NAME": {"value": f"{self.account}.dkr.ecr.{self.region}.amazonaws.com/{ecr_repo.repository_name}"}
-            }            
-            )
 
-        helloworld_codebuild_project.role.add_managed_policy(
-                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonEC2ContainerRegistryPowerUser"))
-
-        # Codedeploy
-        helloworld_application = codedeploy.EcsApplication(self, "HelloWorldApplication",
-            application_name="HelloWorld"
-        )
 

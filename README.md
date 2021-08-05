@@ -1,3 +1,8 @@
 
-# Hello World CodePipeline in CDK
-This is a sample application demonstrating an ECS based Fargate deployment.
+# Hello World CDK Pipelines
+Sample 'Hello World' applications written in CDK and utilising the CDK Pipeline function for CI/CD deployment
+
+### Branchs
+| Branch | Description | 
+
+| `fargate` | Deploys to ECS Fargate and ALB stack | 

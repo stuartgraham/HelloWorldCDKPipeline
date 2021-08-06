@@ -4,4 +4,4 @@ Sample 'Hello World' applications written in CDK and utilising the CDK Pipeline 
 
 ## Branches
 `fargate`  Deploys to ECS Fargate and ALB stack 
-`lambda`  Deploys to Lambda container  
+`lambdacontainer`  Deploys to Lambda container  

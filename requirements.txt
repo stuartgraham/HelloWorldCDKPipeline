@@ -1,0 +1,7 @@
+pyyaml
+aws-cdk.core==1.*
+aws-cdk.aws-ecr==1.*
+aws-cdk.aws-iam==1.*
+aws-cdk.pipelines==1.*
+aws-cdk.aws-apigatewayv2==1.*
+aws-cdk.aws-apigatewayv2-integrations==1.*

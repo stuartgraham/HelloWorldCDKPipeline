@@ -1,0 +1,6 @@
+cdk init --language=python
+# Windows
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+cdk bootstrap --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess --profile abc
+cdk deploy HelloWorldPipeline  --profile abc
